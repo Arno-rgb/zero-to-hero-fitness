@@ -1,15 +1,16 @@
 import React from 'react';
-import { Box, Flex, Heading, Text, Button, Image, useColorMode } from '@chakra-ui/react';
-import { VStack } from '@chakra-ui/layout';
+import { Box, Flex, Heading, Text, Button, Image, useColorMode, VStack } from '@chakra-ui/react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
+
 import Dashboard from './components/Dashboard';
-import ExerciseTracker from './components/ExerciseTracker';
+import ExerciseTracker from './components/ExerciseTracker'; // Or the correct path
 import BattleSystem from './components/BattleSystem';
 import UserProfile from './components/UserProfile';
 import CharacterCustomization from './components/CharacterCustomization';
 import TestPage from './components/TestPage';
 
-// Logo placeholder
+// Logo component with smooth animation
 const Logo = () => (
   <Flex align="center">
     <Image 
@@ -123,7 +124,7 @@ const Footer = () => {
   );
 };
 
-// Welcome screen for first-time users
+// Welcome screen for first-time users with animation
 const Welcome = () => (
   <Box 
     p={8} 
@@ -135,7 +136,9 @@ const Welcome = () => (
     mt={8}
     boxShadow="lg"
   >
-    <Heading mb={4}>Welcome to Zero to Hero!</Heading>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1 }}>
+      <Heading mb={4}>Welcome to Zero to Hero!</Heading>
+    </motion.div>
     <Text fontSize="lg" mb={6}>
       Your journey to becoming a hero starts here. This game will help you build up to the 
       legendary workout: 100 pushups, 100 situps, 100 squats, and a 10km run!

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero to Hero - 3D Battle!</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #dcfce7; }
+        canvas { display: block; }
+        /* --- UI Styles --- */
+        .ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 15px; color: #1f2937; }
+        .top-ui, .bottom-ui { display: flex; justify-content: space-between; pointer-events: auto; }
+        .bottom-ui { justify-content: center; align-items: flex-end; gap: 15px; }
+        .stats-box { background-color: rgba(255, 255, 255, 0.85); padding: 10px 15px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); min-width: 160px; border: 1px solid rgba(0,0,0,0.1); }
+        .stats-box h3 { margin: 0 0 8px 0; font-size: 1em; text-align: center; color: #4b5563; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;}
+        .health-bar-container { width: 100%; height: 14px; background-color: #e5e7eb; border-radius: 7px; overflow: hidden; border: 1px solid #d1d5db; margin-top: 5px; }
+        .health-bar { height: 100%; background-color: #ef4444; width: 100%; border-radius: 6px; transition: width 0.4s ease-in-out; }
+        .player-health .health-bar { background-color: #22c55e; }
+        .resource { font-size: 0.95em; margin-top: 5px; display: flex; align-items: center; justify-content: center; gap: 5px;}
+        .resource span { font-weight: bold; color: #111827; }
+        .actions button { padding: 10px 20px; font-size: 1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background-color: #fbbf24; color: #78350f; box-shadow: 0 3px 6px rgba(0,0,0,0.15); transition: all 0.2s ease; pointer-events: auto; }
+        .actions button:hover:not(:disabled) { background-color: #f59e0b; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .actions button:disabled { background-color: #d1d5db; color: #6b7280; cursor: not-allowed; box-shadow: none; opacity: 0.7; }
+        .battle-log-overlay { position: absolute; bottom: 90px; left: 15px; width: 280px; height: 130px; background-color: rgba(255, 255, 255, 0.9); border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; font-size: 0.8em; overflow-y: auto; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .battle-log-overlay p { margin: 0 0 4px 0; padding-bottom: 2px; border-bottom: 1px dashed #e5e7eb; line-height: 1.4;}
+        .battle-log-overlay p:last-child { border-bottom: none; }
+        .game-message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0, 0, 0, 0.75); color: white; padding: 25px 45px; border-radius: 10px; font-size: 2.2em; font-weight: bold; display: none; pointer-events: none; text-align: center; }
+        .game-message.victory { color: #4ade80; text-shadow: 0 0 5px black; }
+        .game-message.defeat { color: #f87171; text-shadow: 0 0 5px black; }
+        .boss-telegraph .avatar { animation: telegraphPulse 0.4s infinite alternate; }
+        @keyframes telegraphPulse { from { box-shadow: 0 0 15px 5px rgba(255, 0, 0, 0.7); } to { box-shadow: 0 0 25px 10px rgba(255, 100, 0, 0.8); } }
+        #countdown-display { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 8em; font-weight: bold; color: rgba(255, 255, 255, 0.9); text-shadow: 0 0 15px rgba(0, 0, 0, 0.7); opacity: 0; visibility: hidden; transition: opacity 0.4s ease-in-out; pointer-events: none; z-index: 100; }
+        #countdown-display.visible { opacity: 1; visibility: visible; }
+    </style>
+</head>
+<body>
+    <canvas id="battleCanvas"></canvas>
+    <div class="ui-overlay">
+        <div class="top-ui"> <div class="stats-box player-stats"> <h3>Hero</h3> <div class="resource">❤️ Health: <span id="player-health">100</span>/<span id="player-max-health">100</span></div> <div class="health-bar-container player-health"><div id="player-health-bar" class="health-bar"></div></div> <div class="resource">⚡ Energy: <span id="player-energy">--</span>/<span id="player-max-energy">--</span></div> <div class="resource">✊ Power: <span id="player-power">--</span></div> </div> <div class="stats-box boss-stats"> <h3 id="boss-name">Boss</h3> <div class="resource">❤️ Health: <span id="boss-health">--</span>/<span id="boss-max-health">--</span></div> <div class="health-bar-container boss-health"><div id="boss-health-bar" class="health-bar"></div></div> </div> </div>
+        <div class="battle-log-overlay" id="battle-log"><p>Battle initiated...</p></div>
+        <div class="bottom-ui"> <div class="actions"> <button id="attack-btn" onclick="handlePlayerAction('attack')">Attack</button> <button id="evade-btn" onclick="handlePlayerAction('evade')">Evade (← / →)</button> </div> </div>
+        <div id="game-message" class="game-message"></div>
+        <div id="countdown-display"></div>
+    </div>
+
+    <script type="importmap"> { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/", "@tweenjs/tween.js": "https://unpkg.com/@tweenjs/tween.js@23.1.1/dist/tween.esm.js" } } </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import * as TWEEN from '@tweenjs/tween.js';
+
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let playerMesh, bossMesh;
+        let playerHealth, playerMaxHealth, playerEnergy, playerMaxEnergy, playerPower;
+        let bossName, bossHealth, bossMaxHealth, bossWeakness;
+        let battleOver = false;
+        let playerTurn = false;
+        let bossAttackingState = 'idle';
+        let currentBossAttackType = 'normal';
+        let evadeWindowTimeout;
+        let playerIsEvading = false; // Flag: true ONLY during successful evade action window
+        const playerOriginalPos = new THREE.Vector3(-2, 0.75, 0);
+        let currentEvadeTween = null;
+
+        // --- Constants ---
+        const ATTACK_COST_ENERGY = 15; const ATTACK_COST_POWER = 20;
+        // const EVADE_COST_ENERGY = 10; // No energy cost for evade
+        const BOSS_ATTACK_DAMAGE = { normal: 15, heavy: 25 };
+        const EVADE_DURATION = 400;
+        const BOSS_TELEGRAPH_DURATION = { normal: 1200, heavy: 1700 };
+        const BOSS_TURN_DELAY = 1000;
+        const COUNTDOWN_STEP_DURATION = 900;
+        const COUNTDOWN_FADE_DURATION = 400;
+
+        // --- UI Elements ---
+        const playerHealthEl = document.getElementById('player-health'); /* ... */
+        const playerMaxHealthEl = document.getElementById('player-max-health');
+        const playerHealthBarEl = document.getElementById('player-health-bar');
+        const playerEnergyEl = document.getElementById('player-energy');
+        const playerMaxEnergyEl = document.getElementById('player-max-energy');
+        const playerPowerEl = document.getElementById('player-power');
+        const bossNameEl = document.getElementById('boss-name');
+        const bossHealthEl = document.getElementById('boss-health');
+        const bossMaxHealthEl = document.getElementById('boss-max-health');
+        const bossHealthBarEl = document.getElementById('boss-health-bar');
+        const battleLogEl = document.getElementById('battle-log');
+        const gameMessageEl = document.getElementById('game-message');
+        const attackBtn = document.getElementById('attack-btn');
+        const evadeBtn = document.getElementById('evade-btn');
+        const countdownDisplayEl = document.getElementById('countdown-display');
+
+        // --- Initialize ---
+        function init() { /* ... Scene setup ... */ scene = new THREE.Scene(); scene.background = new THREE.Color(0x87ceeb); scene.fog = new THREE.Fog(0x87ceeb, 15, 60); camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100); camera.position.set(0, 3, 7); camera.lookAt(0, 1, 0); renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('battleCanvas'), antialias: true }); renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(window.devicePixelRatio); renderer.shadowMap.enabled = true; const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); scene.add(ambientLight); const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); directionalLight.position.set(5, 10, 7); directionalLight.castShadow = true; scene.add(directionalLight); const groundGeometry = new THREE.PlaneGeometry(100, 100); const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x22c55e }); const ground = new THREE.Mesh(groundGeometry, groundMaterial); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground); const playerGeometry = new THREE.BoxGeometry(1, 1.5, 1); const playerMaterial = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.6, metalness: 0.3 }); playerMesh = new THREE.Mesh(playerGeometry, playerMaterial); playerMesh.position.copy(playerOriginalPos); playerMesh.castShadow = true; scene.add(playerMesh); const bossGeometry = new THREE.BoxGeometry(1.2, 1.8, 1.2); const bossMaterial = new THREE.MeshStandardMaterial({ color: 0x9d5a2d, roughness: 0.7, metalness: 0.2 }); bossMesh = new THREE.Mesh(bossGeometry, bossMaterial); bossMesh.position.set(2, 0.9, 0); bossMesh.castShadow = true; scene.add(bossMesh);
+            const urlParams = new URLSearchParams(window.location.search);
+            playerEnergy = parseInt(urlParams.get('energy') || '100', 10);
+            playerMaxEnergy = parseInt(urlParams.get('maxEnergy') || '100', 10);
+            playerPower = parseInt(urlParams.get('power') || '100', 10);
+            bossName = urlParams.get('bossName') || 'Training Dummy';
+            bossMaxHealth = parseInt(urlParams.get('bossMaxHealth') || '100', 10);
+            bossHealth = bossMaxHealth;
+            bossWeakness = urlParams.get('bossWeakness') || 'balanced';
+            playerHealth = 100; playerMaxHealth = 100;
+            console.log("DEBUG: Initial State Read:", { playerEnergy, playerMaxEnergy, playerPower, bossName, bossHealth, bossMaxHealth, bossWeakness });
+            updateUI(); addLog(`Battle against ${bossName} begins!`); window.addEventListener('keydown', handleKeyDown); animate(); startCountdown();
+        }
+
+        // --- Countdown Logic ---
+        function startCountdown() { /* ... (same as before) ... */ let count = 3; countdownDisplayEl.style.transitionDuration = `${COUNTDOWN_FADE_DURATION}ms`; function showStep() { if (count > 0) { countdownDisplayEl.textContent = count; countdownDisplayEl.classList.add('visible'); setTimeout(() => { countdownDisplayEl.classList.remove('visible'); setTimeout(() => { count--; showStep(); }, COUNTDOWN_FADE_DURATION); }, COUNTDOWN_STEP_DURATION); } else { countdownDisplayEl.textContent = 'BATTLE START!'; countdownDisplayEl.classList.add('visible'); setTimeout(() => { countdownDisplayEl.classList.remove('visible'); setTimeout(() => { playerTurn = true; updateUI(); addLog("Your turn!"); }, COUNTDOWN_FADE_DURATION); }, COUNTDOWN_STEP_DURATION); } } showStep(); }
+
+        // --- Game Loop ---
+        function animate(time) { if (battleOver) return; requestAnimationFrame(animate); TWEEN.update(time); renderer.render(scene, camera); }
+
+        // --- Calculate Damage ---
+        function calculateDamage(attackType, powerUsed, weakness) { let damage = powerUsed; if (attackType === 'quick') damage = Math.round(powerUsed * 0.8); else if (attackType === 'power') damage = Math.round(powerUsed * 1.0); else if (attackType === 'special') damage = Math.round(powerUsed * 1.3); return Math.max(1, Math.round(damage)); }
+
+        // --- Player Actions ---
+        window.handlePlayerAction = (actionType) => {
+             console.log(`DEBUG: handlePlayerAction called: ${actionType}. State: playerTurn=${playerTurn}, battleOver=${battleOver}, bossState=${bossAttackingState}`);
+             // Allow ATTACK only on player turn when boss is idle
+             if (actionType === 'attack') {
+                 if (!playerTurn || battleOver || bossAttackingState !== 'idle') { console.log("DEBUG: Attack blocked by game state."); return; }
+                 handlePlayerAttack();
+             }
+             // Allow EVADE only when boss is telegraphing
+             else if (actionType === 'evade') {
+                 if (battleOver || bossAttackingState !== 'telegraphing') { addLog("Can only use Evade button while boss is attacking!"); console.log("DEBUG: Evade button clicked, but boss not telegraphing."); return; }
+                 triggerPlayerEvade(Math.random() < 0.5 ? -1 : 1); // Trigger defensive evade
+             }
+        }
+
+        function handlePlayerAttack() {
+            const energyCost = ATTACK_COST_ENERGY; const powerCost = ATTACK_COST_POWER;
+            console.log(`DEBUG: Attack Check: Energy=${playerEnergy} (Need ${energyCost}), Power=${playerPower} (Need ${powerCost})`);
+            if (playerEnergy < energyCost) { addLog(`Not enough energy! Need ${energyCost}.`); return; }
+            if (playerPower < powerCost) { addLog(`Not enough power! Need ${powerCost}.`); return; }
+
+            console.log("DEBUG: Attack proceeding...");
+            playerEnergy -= energyCost; playerPower -= powerCost;
+            const damage = calculateDamage('power', powerCost, bossWeakness);
+            bossHealth = Math.max(0, bossHealth - damage);
+            addLog(`Attacked ${bossName} for ${damage} damage! (Cost: ${energyCost} Energy, ${powerCost} Power)`);
+            animateAttack(playerMesh, bossMesh.position, 200); animateHit(bossMesh, 200);
+            updateUI(); checkWinCondition(); if (!battleOver) switchTurn();
+        }
+
+         // --- Updated triggerPlayerEvade ---
+         function triggerPlayerEvade(direction) {
+             console.log(`DEBUG: triggerPlayerEvade called. Direction: ${direction}. IsEvading=${playerIsEvading}`);
+             // REMOVED: Energy check and cost
+             // if (playerEnergy < EVADE_COST_ENERGY) { addLog(`Not enough energy to evade! Need ${EVADE_COST_ENERGY}.`); return; }
+             // REMOVED: Check if already evading - Allow re-triggering / spamming
+             // if (playerIsEvading) { console.log("DEBUG: Evade blocked: Already evading."); return; }
+
+             // playerEnergy -= EVADE_COST_ENERGY; // REMOVED energy cost
+             playerIsEvading = true; // Set flag: Player IS evading this turn's attack
+             const targetX = playerOriginalPos.x + direction * 1.5;
+             addLog(`Evading ${direction === -1 ? 'left' : 'right'}!`); // Updated log message
+             if (currentEvadeTween) currentEvadeTween.stop(); // Stop previous tween if any
+             updateUI(); // Update UI immediately (disables evade button because playerIsEvading is now true)
+
+             // Start the animation
+             currentEvadeTween = new TWEEN.Tween(playerMesh.position) .to({ x: targetX }, EVADE_DURATION / 2) .easing(TWEEN.Easing.Quadratic.Out) .chain(new TWEEN.Tween(playerMesh.position) .to({ x: playerOriginalPos.x }, EVADE_DURATION / 2) .easing(TWEEN.Easing.Quadratic.In) .onComplete(() => { console.log("DEBUG: Evade animation finished."); currentEvadeTween = null; /* Flag reset in resolveAttack */ }) ) .start();
+             // NOTE: playerIsEvading remains true until resolveAttack checks it
+         }
+         // --- End Updated triggerPlayerEvade ---
+
+        // --- Boss Logic ---
+        function startBossTurn() { playerTurn = false; updateUI(); addLog(`${bossName}'s turn...`); setTimeout(() => { if (battleOver) return; currentBossAttackType = Math.random() < 0.3 ? 'heavy' : 'normal'; telegraphAttack(); }, BOSS_TURN_DELAY); }
+        function telegraphAttack() { if (battleOver) return; bossAttackingState = 'telegraphing'; const telegraphDuration = BOSS_TELEGRAPH_DURATION[currentBossAttackType]; addLog(`${bossName} prepares a ${currentBossAttackType} strike! Evade! (${Math.round(telegraphDuration/1000)}s)`); console.log(`DEBUG: Boss telegraphing ${currentBossAttackType} attack for ${telegraphDuration}ms`); const startColor = { value: 0 }; new TWEEN.Tween(startColor) .to({ value: 1 }, telegraphDuration / 2) .easing(TWEEN.Easing.Quadratic.InOut) .yoyo(true).repeat(1) .onUpdate(() => { bossMesh.material.emissive.setHSL(0, 1, startColor.value * 0.5); bossMesh.material.needsUpdate = true; }) .onComplete(() => { bossMesh.material.emissive.setHex(0x000000); bossMesh.material.needsUpdate = true; }).start(); clearTimeout(evadeWindowTimeout); evadeWindowTimeout = setTimeout(resolveAttack, telegraphDuration); updateUI(); } // Update UI to enable evade button
+        function resolveAttack() { if (battleOver) return; console.log(`DEBUG: Resolving boss attack. Player is evading: ${playerIsEvading}`); bossAttackingState = 'attacking'; animateAttack(bossMesh, playerMesh.position, 150); if (playerIsEvading) { addLog(`You successfully evaded ${bossName}'s ${currentBossAttackType} attack!`); } else { const damage = BOSS_ATTACK_DAMAGE[currentBossAttackType]; addLog(`${bossName}'s ${currentBossAttackType} attack hits! You failed to evade!`); playerHealth = Math.max(0, playerHealth - damage); addLog(`You took ${damage} damage.`); animateHit(playerMesh, 150); } playerIsEvading = false; bossAttackingState = 'idle'; updateUI(); checkLoseCondition(); if (!battleOver) switchTurn(); }
+
+         // --- Keyboard Input for Evasion ---
+         function handleKeyDown(event) { console.log(`DEBUG: KeyDown event: ${event.key}. Boss State: ${bossAttackingState}, IsEvading: ${playerIsEvading}`);
+             // Allow keyboard evade only during boss telegraphing phase
+             if (battleOver || bossAttackingState !== 'telegraphing') return; // Removed playerIsEvading check here to allow spamming trigger
+             let direction = 0;
+             if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') direction = -1;
+             else if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') direction = 1;
+             if (direction !== 0) { triggerPlayerEvade(direction); }
+         }
+
+        // --- Turn Management ---
+        function switchTurn() { if (battleOver) return; playerTurn = !playerTurn; console.log(`DEBUG: Switching turn. Player turn: ${playerTurn}`); if (!playerTurn) { startBossTurn(); } else { addLog("Your turn!"); updateUI(); } }
+
+        // --- Win/Lose Conditions & End Battle ---
+        function checkWinCondition() { if (bossHealth <= 0) { endBattle(true); } }
+        function checkLoseCondition() { if (playerHealth <= 0) { endBattle(false); } }
+        function endBattle(isVictory) { /* ... (postMessage logic remains the same) ... */ if (battleOver) return; battleOver = true; clearTimeout(evadeWindowTimeout); bossAttackingState = 'idle'; bossMesh.material.emissive.setHex(0x000000); bossMesh.material.needsUpdate = true; updateUI(); const resultMessage = { battleResult: isVictory ? 'victory' : 'defeat', bossId: bossName }; gameMessageEl.textContent = isVictory ? 'VICTORY!' : 'DEFEAT!'; gameMessageEl.className = isVictory ? 'game-message victory' : 'game-message defeat'; gameMessageEl.style.display = 'block'; addLog(isVictory ? `${bossName} defeated!` : `You were defeated!`); try { const target = window.opener || parent; target.postMessage(resultMessage, '*'); console.log("DEBUG: Sent battle result to parent:", resultMessage); } catch (e) { console.error("Failed to send postMessage:", e); } }
+
+        // --- Logging ---
+        function addLog(message) { console.log("LOG:", message); const logEntry = document.createElement('p'); logEntry.textContent = `> ${message}`; if (battleLogEl.firstChild) { battleLogEl.insertBefore(logEntry, battleLogEl.firstChild); } else { battleLogEl.appendChild(logEntry); } while (battleLogEl.children.length > 20) { battleLogEl.removeChild(battleLogEl.lastChild); } }
+
+         // --- Animations using TWEEN ---
+         function animateAttack(attackerMesh, targetPosition, duration = 200) { /* ... */ const originalPos = attackerMesh.position.clone(); const direction = new THREE.Vector3().subVectors(targetPosition, originalPos).normalize(); const targetPos = new THREE.Vector3().addVectors(originalPos, direction.multiplyScalar(0.8)); new TWEEN.Tween(attackerMesh.position) .to(targetPos, duration / 2) .easing(TWEEN.Easing.Quadratic.Out) .chain(new TWEEN.Tween(attackerMesh.position) .to(originalPos, duration / 2) .easing(TWEEN.Easing.Quadratic.In) ) .start(); }
+         function animateHit(targetMesh, duration = 150) { /* ... */ const originalColor = targetMesh.material.color.getHex(); const hitColor = 0xffffff; new TWEEN.Tween(targetMesh.material.color) .to({ r: 1, g: 1, b: 1 }, duration / 2) .easing(TWEEN.Easing.Quadratic.Out) .chain(new TWEEN.Tween(targetMesh.material.color) .to(new THREE.Color(originalColor), duration / 2) .easing(TWEEN.Easing.Quadratic.In) ) .start(); }
+
+        // --- UI Update Function ---
+        function updateUI() {
+            console.log(`DEBUG: updateUI called. State: playerTurn=${playerTurn}, battleOver=${battleOver}, bossState=${bossAttackingState}, isEvading=${playerIsEvading}`);
+            playerEnergyEl.textContent = `${playerEnergy}/${playerMaxEnergy}`; playerPowerEl.textContent = `${playerPower}`;
+            playerHealthEl.textContent = playerHealth; playerMaxHealthEl.textContent = playerMaxHealth; playerHealthBarEl.style.width = `${(playerHealth / playerMaxHealth) * 100}%`;
+            bossNameEl.textContent = bossName; bossHealthEl.textContent = bossHealth; bossMaxHealthEl.textContent = bossMaxHealth; bossHealthBarEl.style.width = `${(bossHealth / bossMaxHealth) * 100}%`;
+            attackBtn.disabled = !playerTurn || battleOver || bossAttackingState !== 'idle';
+            // Evade button only enabled during boss telegraph phase
+            // Allow clicking even if already evading to feel "spammable", triggerPlayerEvade handles actual logic
+            evadeBtn.disabled = battleOver || bossAttackingState !== 'telegraphing';
+            console.log(`DEBUG: Button States: Attack disabled=${attackBtn.disabled}, Evade disabled=${evadeBtn.disabled}`);
+        }
+
+        // --- Handle Window Resize ---
+        function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+        window.addEventListener('resize', onWindowResize);
+
+        // --- Start ---
+        init();
+
+    </script>
+</body>
+</html>
